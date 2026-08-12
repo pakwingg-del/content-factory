@@ -1,0 +1,50 @@
+name: Generate PopSpill Daily
+
+on:
+  schedule:
+    # 先跟 viralnn 類似時段（UTC）
+    - cron: '10 1 * * *'
+    - cron: '10 6 * * *'
+    - cron: '10 12 * * *'
+  workflow_dispatch: # 允許手動 Run
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install requests openai google-auth google-api-python-client
+
+      - name: Generate Content + D1
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          CF_ACCOUNT_POPSPILLDAILY: ${{ secrets.CF_ACCOUNT_POPSPILLDAILY }}
+          CF_DB_POPSPILLDAILY: ${{ secrets.CF_DB_POPSPILLDAILY }}
+          CF_TOKEN_POPSPILLDAILY: ${{ secrets.CF_TOKEN_POPSPILLDAILY }}
+        run: python generator.py --site popspilldaily
+
+      - name: Submit Indexing
+        env:
+          CF_ACCOUNT_POPSPILLDAILY: ${{ secrets.CF_ACCOUNT_POPSPILLDAILY }}
+          CF_DB_POPSPILLDAILY: ${{ secrets.CF_DB_POPSPILLDAILY }}
+          CF_TOKEN_POPSPILLDAILY: ${{ secrets.CF_TOKEN_POPSPILLDAILY }}
+          INDEXNOW_KEY_POPSPILLDAILY: ${{ secrets.INDEXNOW_KEY_POPSPILLDAILY }}
+          # 如果你個 submit_indexing 仲用緊 Google SA，一併加：
+          GOOGLE_SERVICE_ACCOUNT_1: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_1 }}
+          GOOGLE_SERVICE_ACCOUNT_2: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_2 }}
+          GOOGLE_SERVICE_ACCOUNT_3: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_3 }}
+          GOOGLE_SERVICE_ACCOUNT_4: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_4 }}
+          GOOGLE_SERVICE_ACCOUNT_5: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_5 }}
+          GOOGLE_SERVICE_ACCOUNT_6: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_6 }}
+        run: python submit_indexing.py --site popspilldaily
