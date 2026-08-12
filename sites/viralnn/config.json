@@ -1,0 +1,13 @@
+{
+  "site_id": "viralnn",
+  "domain": "viralnn.com",
+  "cloudflare_account_id_env": "CLOUDFLARE_ACCOUNT_ID",
+  "cloudflare_database_id_env": "CLOUDFLARE_DATABASE_ID",
+  "cloudflare_api_token_env": "CLOUDFLARE_API_TOKEN",
+  "indexnow_key_env": "INDEXNOW_KEY",
+  "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/master_trends.json",
+  "trends_limit": 80,
+  "personas_count": 5,
+  "articles_per_run": 400,
+  "persona_style": "default"
+}

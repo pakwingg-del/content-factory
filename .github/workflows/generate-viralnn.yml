@@ -1,0 +1,29 @@
+# .github/workflows/generate-viralnn.yml
+name: Generate ViralNN
+on:
+  schedule:
+    - cron: '5 1 * * *'
+    - cron: '5 6 * * *'
+    - cron: '5 12 * * *'
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests openai google-auth google-api-python-client
+      - name: Generate + Inject
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_DATABASE_ID: ${{ secrets.CLOUDFLARE_DATABASE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+          # ... 其他 Google SA secrets
+        run: python generator.py --site viralnn
+      - name: Submit Indexing
+        run: python submit_indexing.py --site viralnn
