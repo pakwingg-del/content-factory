@@ -14,10 +14,8 @@ client = OpenAI(
     api_key=os.getenv("DEEPSEEK_API_KEY"),
     base_url="https://api.deepseek.com"
 )
-
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
-# 預設 Persona（可用 config 覆蓋）
 DEFAULT_PERSONA_MATRIX = [
     "Tabloid journalist, use heavy dramatic language, ALL CAPS hooks, shocking reveals, urgent tone, and American sensational style.",
     "Viral Gen-Z TikToker, high energy brainrot slang, short punchy sentences, heavy hype, emojis vibe, and trending American internet culture.",
@@ -25,12 +23,12 @@ DEFAULT_PERSONA_MATRIX = [
     "Deep conspiracy investigator, 'hidden truth', 'stay woke', connecting dots others miss, with American political and cultural angle.",
     "Moral critic and societal observer, focus on ethical issues, 'society is collapsing' angle, and impact on American daily life."
 ]
-
 FINANCIAL_PERSONA_MATRIX = [
     "Sharp financial analyst, clear data-driven language, focus on market impact and investor implications.",
     "Crypto Twitter trader voice, urgent, slang-heavy, FOMO and risk warnings mixed.",
     "Skeptical market observer, question hype, point out risks and who benefits."
 ]
+
 
 def load_site_config(site_id: str) -> dict:
     config_path = f"sites/{site_id}/config.json"
@@ -43,19 +41,20 @@ def load_site_config(site_id: str) -> dict:
     print(f"✅ Loaded config for site: {config.get('site_id')} ({config.get('domain')})")
     return config
 
+
 def env_from_config(config: dict, key: str, fallback_env: str = None):
-    """從 config 讀 env 變數名，再取真正 value"""
     env_name = config.get(key) or fallback_env
     if not env_name:
         return None
     return os.getenv(env_name)
 
+
 def get_persona_matrix(config: dict):
     style = (config.get("persona_style") or "default").lower()
     if style == "financial":
         return FINANCIAL_PERSONA_MATRIX
-    # 之後可以加更多 style
     return DEFAULT_PERSONA_MATRIX
+
 
 def download_image(url, filename):
     try:
@@ -70,13 +69,19 @@ def download_image(url, filename):
         return None
     return None
 
+
 def get_pexels_image(query):
     if not PEXELS_API_KEY:
         return None
     try:
         headers = {"Authorization": PEXELS_API_KEY}
         params = {"query": query, "per_page": 1, "orientation": "landscape"}
-        resp = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params, timeout=8)
+        resp = requests.get(
+            "https://api.pexels.com/v1/search",
+            headers=headers,
+            params=params,
+            timeout=8
+        )
         if resp.status_code == 200:
             data = resp.json()
             if data.get("photos"):
@@ -88,11 +93,49 @@ def get_pexels_image(query):
         pass
     return None
 
+
+def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
+    """強制 meta description 落喺 150–160 字元（Bing 建議）。"""
+    text = (text or "").strip()
+    text = re.sub(r'^["\']|["\']$', "", text).strip()
+    text = " ".join(text.split())
+
+    # 太短：用 title / keyword 補自然英文句子
+    fillers = [
+        f" Here's what is unfolding around {keyword} and why US readers are paying attention right now.",
+        f" See why {keyword} is trending and what it could mean for people across America today.",
+        f" A clear breakdown of {keyword}, the key claims, and why this story is gaining traction now.",
+    ]
+    guard = 0
+    while len(text) < min_len and guard < 5:
+        if not text:
+            text = title or f"Latest updates on {keyword}"
+        filler = fillers[guard % len(fillers)]
+        # 避免重複硬塞同一句
+        if filler.strip() not in text:
+            text = (text.rstrip(". ") + "." + filler).strip()
+        else:
+            text = (text + " Stay informed with the latest verified developments.").strip()
+        text = " ".join(text.split())
+        guard += 1
+
+    if len(text) > max_len:
+        cut = text[: max_len - 1]
+        if " " in cut:
+            cut = cut.rsplit(" ", 1)[0]
+        text = cut.rstrip(".,;:") + "…"
+
+    # 最後再保證唔短過 min（極端情況）
+    if len(text) < min_len:
+        pad = " More details inside."
+        text = (text + pad)[:max_len]
+
+    return text
+
+
 def fetch_single_article(persona_tuple, seed, last_updated, site_config):
     round_idx, current_persona = persona_tuple
     query = seed["query"]
-    domain = site_config.get("domain", "example.com")
-
     system_prompt = (
         f"You are a: {current_persona}. Write a unique, engaging viral news article for an American audience.\n"
         f"CRITICAL RULES:\n"
@@ -102,7 +145,6 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         f"- Do NOT write a conclusion yet.\n"
         f"- Use American English."
     )
-
     try:
         completion = client.chat.completions.create(
             model="deepseek-chat",
@@ -113,40 +155,43 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
             max_tokens=1300,
             temperature=0.85
         )
-
         content = completion.choices[0].message.content.strip()
         lines = [line.strip() for line in content.split("\n") if line.strip()]
         raw_title = lines[0] if lines else query
-
         clean_title = re.sub(
             r"^(FOR IMMEDIATE RELEASE|BREAKING NEWS|BREAKING|HEADLINE|TITLE|UPDATE)[:\s]*",
             "", raw_title, flags=re.IGNORECASE
         ).strip()
         clean_title = re.sub(r'^["\']|["\']$', "", clean_title).strip()
-
         if len(clean_title) < 35:
             clean_title = f"What's Really Happening with {query} Right Now in America"
 
-        # Meta Description
+        # Meta Description — 明確要求 150–160
         meta_prompt = (
-            f"Write a unique meta description for a news article titled: \"{clean_title}\"\n"
+            f"Write ONE unique SEO meta description for a news article.\n"
+            f"Title: \"{clean_title}\"\n"
             f"Topic: {query}\n"
-            f"Rules:\n"
-            f"- 140 to 160 characters maximum\n"
-            f"- Include the main topic naturally\n"
-            f"- Make it click-worthy but not clickbait spam\n"
+            f"STRICT RULES:\n"
+            f"- Length MUST be between 150 and 160 characters including spaces\n"
+            f"- Count carefully before answering\n"
+            f"- Include the topic naturally\n"
+            f"- Click-worthy but not spammy\n"
             f"- American English\n"
-            f"- Output ONLY the description text, nothing else"
+            f"- Output ONLY the description text, no quotes, no labels"
         )
         meta_completion = client.chat.completions.create(
             model="deepseek-chat",
             messages=[{"role": "user", "content": meta_prompt}],
-            max_tokens=80,
+            max_tokens=100,
             temperature=0.7
         )
-        meta_description = meta_completion.choices[0].message.content.strip()
-        if len(meta_description) > 160:
-            meta_description = meta_description[:157] + "..."
+        meta_description = fit_meta_description(
+            meta_completion.choices[0].message.content.strip(),
+            title=clean_title,
+            keyword=query,
+            min_len=150,
+            max_len=160
+        )
 
         # Human Touch Opinion
         opinion_prompt = (
@@ -160,7 +205,6 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
             temperature=0.9
         )
         opinion = opinion_completion.choices[0].message.content.strip()
-
         final_content = content + "\n\n<h3>Final Thoughts</h3>\n<p>" + opinion + "</p>"
 
         image_path = get_pexels_image(query)
@@ -184,12 +228,14 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         print(f"⚠️ Error processing {query}: {e}")
         return None
 
+
 def generate_sitemap():
     print("🗺️ Generating sitemap...")
     try:
         print("✅ Sitemap generated (placeholder)")
     except:
         pass
+
 
 def generate_matrix(config: dict):
     domain = config.get("domain", "example.com")
@@ -201,9 +247,8 @@ def generate_matrix(config: dict):
     personas = get_persona_matrix(config)
     personas_count = min(int(config.get("personas_count", len(personas))), len(personas))
     personas = personas[:personas_count]
-
-    # 目標篇數（大約 = trends_limit * personas_count）
     target_articles = trends_limit * personas_count
+
     print(f"📡 Fetching trends for {domain}...")
     print(f"   Target ~{target_articles} articles ({trends_limit} trends × {personas_count} personas)")
 
@@ -224,8 +269,8 @@ def generate_matrix(config: dict):
 
     all_articles = []
     MAX_WORKERS = int(config.get("max_workers", 40))
-
     print(f"🚀 Starting generation for [{config.get('site_id')}]...")
+
     tasks = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         for round_idx, persona in enumerate(personas):
@@ -239,7 +284,6 @@ def generate_matrix(config: dict):
                         config
                     )
                 )
-
         completed_count = 0
         for future in as_completed(tasks):
             result = future.result()
@@ -250,6 +294,11 @@ def generate_matrix(config: dict):
                 print(f"📦 Progress: {completed_count}/{len(tasks)}")
 
     print(f"✅ Generated {len(all_articles)} articles")
+
+    # 抽樣顯示 meta 長度（方便你 check Bing 要求）
+    for sample in all_articles[:3]:
+        md = sample.get("meta_description", "")
+        print(f"📝 Meta sample ({len(md)} chars): {md}")
 
     # ==================== D1 Injection ====================
     account_id = env_from_config(config, "cloudflare_account_id_env", "CLOUDFLARE_ACCOUNT_ID")
@@ -269,11 +318,16 @@ def generate_matrix(config: dict):
     for idx, article in enumerate(all_articles):
         safe_keyword = "".join([c if c.isalnum() else "_" for c in article["keyword"]]).lower()
         url_slug = f"{year}/{month}/{day}/{safe_keyword}_{idx}"
-
         article_body = article["body"]
         ad_str = config.get("ad_verification")
         if ad_str and idx == 0:
             article_body += f"\n\nAdsterra verification string: {ad_str}"
+
+        meta = fit_meta_description(
+            article.get("meta_description", ""),
+            title=article.get("title", ""),
+            keyword=article.get("keyword", "")
+        )
 
         sql = """INSERT OR REPLACE INTO articles
                  (title, keyword, body, persona_id, persona_type, search_volume, created_at, url_slug, meta_description)
@@ -287,7 +341,7 @@ def generate_matrix(config: dict):
             str(article["source_volume"]),
             current_time,
             url_slug,
-            article.get("meta_description", "")
+            meta
         ]
         statements.append({"sql": sql, "params": params})
 
@@ -321,10 +375,10 @@ def generate_matrix(config: dict):
     generate_sitemap()
     print(f"🎉 [{config.get('site_id')}] Batch Complete!")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Multi-site content generator")
     parser.add_argument("--site", required=True, help="Site id, e.g. viralnn")
     args = parser.parse_args()
-
     config = load_site_config(args.site)
     generate_matrix(config)
