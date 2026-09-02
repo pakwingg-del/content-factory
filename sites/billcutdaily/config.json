@@ -1,0 +1,13 @@
+{
+  "site_id": "billcutdaily",
+  "domain": "billcutdaily.com",
+  "persona_style": "financial",
+  "trends_limit": 50,
+  "personas_count": 3,
+  "max_workers": 30,
+  "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/master_trends.json",
+  "cloudflare_account_id_env": "CF_ACCOUNT_BILLCUTDAILY",
+  "cloudflare_database_id_env": "CF_DB_BILLCUTDAILY",
+  "cloudflare_api_token_env": "CF_TOKEN_BILLCUTDAILY",
+  "ad_verification": ""
+}
