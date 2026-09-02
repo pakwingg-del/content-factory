@@ -1,0 +1,13 @@
+{
+  "site_id": "gadgetpulseus",
+  "domain": "gadgetpulseus.com",
+  "persona_style": "default",
+  "trends_limit": 50,
+  "personas_count": 4,
+  "max_workers": 30,
+  "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/master_trends.json",
+  "cloudflare_account_id_env": "CF_ACCOUNT_GADGETPULSEUS",
+  "cloudflare_database_id_env": "CF_DB_GADGETPULSEUS",
+  "cloudflare_api_token_env": "CF_TOKEN_GADGETPULSEUS",
+  "ad_verification": ""
+}
