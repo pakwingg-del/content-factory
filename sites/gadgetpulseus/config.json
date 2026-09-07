@@ -9,5 +9,6 @@
   "cloudflare_account_id_env": "CF_ACCOUNT_GADGETPULSEUS",
   "cloudflare_database_id_env": "CF_DB_GADGETPULSEUS",
   "cloudflare_api_token_env": "CF_TOKEN_GADGETPULSEUS",
+  "indexnow_key": "f3386ed14b14406bb84ae3cccc049909"
   "ad_verification": ""
 }
