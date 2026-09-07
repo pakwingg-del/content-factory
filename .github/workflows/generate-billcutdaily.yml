@@ -1,11 +1,9 @@
 name: Generate BillCut Daily
 
 on:
-  schedule:
-    - cron: '25 14,16,18,20,22 * * *'   # 北京 22:25 / 00:25 / 02:25 / 04:25 / 06:25
-  workflow_dispatch:
+  workflow_dispatch:           # GitHub 網頁手動 Run
   repository_dispatch:
-    types: [run_billcutdaily]
+    types: [external_trigger]  # 外部 API 觸發（你而家用緊呢種）
 
 permissions:
   contents: read
