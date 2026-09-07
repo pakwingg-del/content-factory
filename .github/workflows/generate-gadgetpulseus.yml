@@ -1,11 +1,9 @@
 name: Generate Gadget Pulse US
 
 on:
-  schedule:
-    - cron: '35 14,16,18,20,22 * * *'   # 北京 22:35 / 00:35 / 02:35 / 04:35 / 06:35
-  workflow_dispatch:
+  workflow_dispatch:           # GitHub 網頁手動 Run
   repository_dispatch:
-    types: [run_gadgetpulseus]
+    types: [external_trigger]  # 外部 API 觸發（你而家用緊呢種）
 
 permissions:
   contents: read
