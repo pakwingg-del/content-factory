@@ -1,12 +1,9 @@
 name: Generate PopSpill Daily
 
 on:
-  schedule:
-    # 先跟 viralnn 類似時段（UTC）
-    - cron: '10 1 * * *'
-    - cron: '10 6 * * *'
-    - cron: '10 12 * * *'
-  workflow_dispatch: # 允許手動 Run
+  workflow_dispatch:           # GitHub 網頁手動 Run
+  repository_dispatch:
+    types: [external_trigger]  # 外部 API 觸發（你而家用緊呢種）
 
 permissions:
   contents: write
