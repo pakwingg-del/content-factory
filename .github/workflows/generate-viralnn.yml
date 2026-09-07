@@ -1,11 +1,9 @@
 # .github/workflows/generate-viralnn.yml
 name: Generate ViralNN
 on:
-  schedule:
-    - cron: '5 1 * * *'
-    - cron: '5 6 * * *'
-    - cron: '5 12 * * *'
-  workflow_dispatch:
+  workflow_dispatch:           # GitHub 網頁手動 Run
+  repository_dispatch:
+    types: [external_trigger]  # 外部 API 觸發（你而家用緊呢種）
 
 jobs:
   generate:
