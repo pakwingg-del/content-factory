@@ -6,8 +6,9 @@
   "cloudflare_api_token_env": "CLOUDFLARE_API_TOKEN",
   "indexnow_key_env": "INDEXNOW_KEY",
   "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/master_trends.json",
-  "trends_limit": 80,
+  "trends_limit": 100,
   "personas_count": 5,
-  "articles_per_run": 400,
+  "articles_per_run": 500,
+  "max_workers": 50,
   "persona_style": "default"
 }
