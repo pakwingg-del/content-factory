@@ -5,7 +5,7 @@
   "cloudflare_database_id_env": "CF_DB_POPSPILLDAILY",
   "cloudflare_api_token_env": "CF_TOKEN_POPSPILLDAILY",
   "indexnow_key_env": "INDEXNOW_KEY_POPSPILLDAILY",
-  "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/master_trends.json",
+  "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/trends_entertainment.json",
   "trends_limit": 100,
   "personas_count": 5,
   "max_workers": 50,
