@@ -42,7 +42,7 @@
   "personas_count": 5,
   "max_workers": 50,
   "daily_volume": 500,
-  "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/master_trends.json",
+  "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/trends_finance.json",
   "cloudflare_account_id_env": "CF_ACCOUNT_BILLCUTDAILY",
   "cloudflare_database_id_env": "CF_DB_BILLCUTDAILY",
   "cloudflare_api_token_env": "CF_TOKEN_BILLCUTDAILY",
