@@ -6,6 +6,7 @@ import argparse
 import requests
 from datetime import datetime
 
+
 def load_site_config(site_id: str) -> dict:
     config_path = f"sites/{site_id}/config.json"
     if not os.path.exists(config_path):
@@ -14,11 +15,13 @@ def load_site_config(site_id: str) -> dict:
     with open(config_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def env_from_config(config: dict, key: str, fallback_env: str = None):
     env_name = config.get(key) or fallback_env
     if not env_name:
         return None
     return os.getenv(env_name)
+
 
 def get_indexnow_key(config: dict, site_id: str) -> str:
     return (
@@ -27,8 +30,24 @@ def get_indexnow_key(config: dict, site_id: str) -> str:
         or (os.getenv("INDEXNOW_KEY") or "").strip()
     )
 
+
+def normalize_domain(domain: str) -> str:
+    d = (domain or "").strip().lower()
+    d = d.replace("https://", "").replace("http://", "").strip("/")
+    if d.startswith("www."):
+        d = d[4:]
+    return d
+
+
+def to_canonical_url(domain: str, slug: str) -> str:
+    slug = (slug or "").strip().strip("/")
+    if not slug:
+        return f"https://{domain}/"
+    return f"https://{domain}/{slug}/"
+
+
 def fetch_recent_urls(config: dict, hours: int = 24, limit: int = 500):
-    domain = (config.get("domain") or "").strip()
+    domain = normalize_domain(config.get("domain") or "")
     if not domain:
         print("❌ domain missing in config.json")
         sys.exit(1)
@@ -36,7 +55,6 @@ def fetch_recent_urls(config: dict, hours: int = 24, limit: int = 500):
     account_id = env_from_config(config, "cloudflare_account_id_env", "CLOUDFLARE_ACCOUNT_ID")
     database_id = env_from_config(config, "cloudflare_database_id_env", "CLOUDFLARE_DATABASE_ID")
     api_token = env_from_config(config, "cloudflare_api_token_env", "CLOUDFLARE_API_TOKEN")
-
     if not all([account_id, database_id, api_token]):
         print("❌ Missing Cloudflare credentials (check config + GitHub Secrets)")
         sys.exit(1)
@@ -64,17 +82,22 @@ def fetch_recent_urls(config: dict, hours: int = 24, limit: int = 500):
             return domain, []
 
         rows = data.get("result", [{}])[0].get("results", [])
-        urls = []
+        urls = [f"https://{domain}/"]
+        seen = {urls[0]}
         for row in rows:
-            slug = (row.get("url_slug") or "").strip().strip("/")
-            if slug:
-                urls.append(f"https://{domain}/{slug}/")
+            u = to_canonical_url(domain, row.get("url_slug") or "")
+            if u not in seen:
+                seen.add(u)
+                urls.append(u)
 
-        print(f"📋 Found {len(urls)} URLs (last {hours}h) for {domain}")
+        print(f"📋 Found {len(urls)} URLs (incl. homepage, last {hours}h) for {domain}")
+        if urls[1:2]:
+            print(f"   sample: {urls[1]}")
         return domain, urls
     except Exception as e:
         print(f"❌ D1 error: {e}")
         return domain, []
+
 
 def submit_indexnow(domain: str, urls: list, key: str):
     if not urls:
@@ -86,7 +109,10 @@ def submit_indexnow(domain: str, urls: list, key: str):
 
     endpoint = "https://api.indexnow.org/indexnow"
     batch_size = 200
-    print(f"🚀 IndexNow → host={domain}, key={key[:8]}…, urls={len(urls)}")
+    key_location = f"https://{domain}/{key}.txt"
+    print(f"🚀 IndexNow → host={domain}")
+    print(f"   keyLocation={key_location}")
+    print(f"   urls={len(urls)}")
 
     ok_batches = 0
     for i in range(0, len(urls), batch_size):
@@ -94,6 +120,7 @@ def submit_indexnow(domain: str, urls: list, key: str):
         payload = {
             "host": domain,
             "key": key,
+            "keyLocation": key_location,
             "urlList": chunk
         }
         try:
@@ -114,18 +141,45 @@ def submit_indexnow(domain: str, urls: list, key: str):
 
     print(f"🎉 IndexNow finished — ok batches: {ok_batches}")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Submit recent article URLs to IndexNow (Bing etc.)")
     parser.add_argument("--site", required=True, help="Site id, e.g. viralnn / popspilldaily")
     parser.add_argument("--hours", type=int, default=24, help="Look back hours (default 24)")
-    parser.add_argument("--limit", type=int, default=500, help="Max URLs (default 500)")
+    parser.add_argument("--limit", type=int, default=500, help="Max article URLs (default 500)")
+    parser.add_argument(
+        "--url",
+        action="append",
+        default=[],
+        help="Extra canonical URL to include (repeatable)"
+    )
     args = parser.parse_args()
 
     print(f"[{datetime.now().isoformat()}] IndexNow for site={args.site}")
     config = load_site_config(args.site)
     key = get_indexnow_key(config, args.site)
     domain, urls = fetch_recent_urls(config, hours=args.hours, limit=args.limit)
-    submit_indexnow(domain, urls, key)
+
+    extra = []
+    for raw in args.url:
+        raw = (raw or "").strip()
+        if not raw:
+            continue
+        if raw.startswith("http"):
+            u = raw if raw.endswith("/") else raw + "/"
+        else:
+            u = to_canonical_url(domain, raw)
+        extra.append(u)
+
+    merged = []
+    seen = set()
+    for u in extra + urls:
+        if u not in seen:
+            seen.add(u)
+            merged.append(u)
+
+    submit_indexnow(domain, merged, key)
+
 
 if __name__ == "__main__":
     main()
