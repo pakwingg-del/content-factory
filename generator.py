@@ -15,6 +15,7 @@ client = OpenAI(
     base_url="https://api.deepseek.com"
 )
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
+LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-flash")
 
 DEFAULT_PERSONA_MATRIX = [
     "Tabloid journalist, use heavy dramatic language, ALL CAPS hooks, shocking reveals, urgent tone, and American sensational style.",
@@ -65,7 +66,7 @@ def download_image(url, filename):
             with open(filepath, "wb") as f:
                 f.write(response.content)
             return f"/images/{filename}"
-    except:
+    except Exception:
         return None
     return None
 
@@ -89,9 +90,39 @@ def get_pexels_image(query):
                 image_url = photo["src"]["large"]
                 filename = f"{int(time.time())}_{photo['id']}.jpg"
                 return download_image(image_url, filename)
-    except:
+    except Exception:
         pass
     return None
+
+
+def fit_title(text, keyword="", min_len=50, max_len=65):
+    """強制 title 50–65 字元（Bing 警告 >70）。"""
+    t = (text or "").strip()
+    t = re.sub(r'^["\']|["\']$', "", t).strip()
+    t = re.sub(
+        r"^(FOR IMMEDIATE RELEASE|BREAKING NEWS|BREAKING|HEADLINE|TITLE|UPDATE)[:\s]*",
+        "",
+        t,
+        flags=re.IGNORECASE
+    ).strip()
+    t = " ".join(t.split())
+
+    if len(t) < min_len:
+        extra = f" — {keyword} update" if keyword else " — latest US update"
+        if extra.lower() not in t.lower():
+            t = (t + extra).strip()
+        t = " ".join(t.split())
+
+    if len(t) > max_len:
+        cut = t[: max_len - 1]
+        if " " in cut:
+            cut = cut.rsplit(" ", 1)[0]
+        t = cut.rstrip(" ,.;:|-—") + "…"
+
+    if len(t) < 20:
+        t = (keyword or "Trending US story")[:max_len]
+
+    return t
 
 
 def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
@@ -99,8 +130,6 @@ def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
     text = (text or "").strip()
     text = re.sub(r'^["\']|["\']$', "", text).strip()
     text = " ".join(text.split())
-
-    # 太短：用 title / keyword 補自然英文句子
     fillers = [
         f" Here's what is unfolding around {keyword} and why US readers are paying attention right now.",
         f" See why {keyword} is trending and what it could mean for people across America today.",
@@ -111,25 +140,20 @@ def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
         if not text:
             text = title or f"Latest updates on {keyword}"
         filler = fillers[guard % len(fillers)]
-        # 避免重複硬塞同一句
         if filler.strip() not in text:
             text = (text.rstrip(". ") + "." + filler).strip()
         else:
             text = (text + " Stay informed with the latest verified developments.").strip()
         text = " ".join(text.split())
         guard += 1
-
     if len(text) > max_len:
         cut = text[: max_len - 1]
         if " " in cut:
             cut = cut.rsplit(" ", 1)[0]
         text = cut.rstrip(".,;:") + "…"
-
-    # 最後再保證唔短過 min（極端情況）
     if len(text) < min_len:
         pad = " More details inside."
         text = (text + pad)[:max_len]
-
     return text
 
 
@@ -140,14 +164,15 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         f"You are a: {current_persona}. Write a unique, engaging viral news article for an American audience.\n"
         f"CRITICAL RULES:\n"
         f"- The VERY FIRST LINE must be the title only (no labels like TITLE: or BREAKING:).\n"
-        f"- Title must be 55-90 characters, curiosity-driven, specific, and natural (avoid repeating the same formula).\n"
+        f"- Title MUST be 50-65 characters including spaces. Count carefully. Never exceed 65.\n"
+        f"- Curiosity-driven, specific, natural. No ALL CAPS. No repeating the same formula.\n"
         f"- Write the main article body (800-1100 words).\n"
         f"- Do NOT write a conclusion yet.\n"
         f"- Use American English."
     )
     try:
         completion = client.chat.completions.create(
-            model="deepseek-chat",
+            model=LLM_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Write a viral article about: {query}"}
@@ -158,15 +183,8 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         content = completion.choices[0].message.content.strip()
         lines = [line.strip() for line in content.split("\n") if line.strip()]
         raw_title = lines[0] if lines else query
-        clean_title = re.sub(
-            r"^(FOR IMMEDIATE RELEASE|BREAKING NEWS|BREAKING|HEADLINE|TITLE|UPDATE)[:\s]*",
-            "", raw_title, flags=re.IGNORECASE
-        ).strip()
-        clean_title = re.sub(r'^["\']|["\']$', "", clean_title).strip()
-        if len(clean_title) < 35:
-            clean_title = f"What's Really Happening with {query} Right Now in America"
+        clean_title = fit_title(raw_title, keyword=query, min_len=50, max_len=65)
 
-        # Meta Description — 明確要求 150–160
         meta_prompt = (
             f"Write ONE unique SEO meta description for a news article.\n"
             f"Title: \"{clean_title}\"\n"
@@ -180,7 +198,7 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
             f"- Output ONLY the description text, no quotes, no labels"
         )
         meta_completion = client.chat.completions.create(
-            model="deepseek-chat",
+            model=LLM_MODEL,
             messages=[{"role": "user", "content": meta_prompt}],
             max_tokens=100,
             temperature=0.7
@@ -193,13 +211,12 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
             max_len=160
         )
 
-        # Human Touch Opinion
         opinion_prompt = (
             f"Based on the article about '{query}', write 2-3 insightful sentences as a personal opinion and conclusion. "
             f"Sound like a real experienced journalist."
         )
         opinion_completion = client.chat.completions.create(
-            model="deepseek-chat",
+            model=LLM_MODEL,
             messages=[{"role": "user", "content": opinion_prompt}],
             max_tokens=180,
             temperature=0.9
@@ -233,7 +250,7 @@ def generate_sitemap():
     print("🗺️ Generating sitemap...")
     try:
         print("✅ Sitemap generated (placeholder)")
-    except:
+    except Exception:
         pass
 
 
@@ -248,9 +265,9 @@ def generate_matrix(config: dict):
     personas_count = min(int(config.get("personas_count", len(personas))), len(personas))
     personas = personas[:personas_count]
     target_articles = trends_limit * personas_count
-
     print(f"📡 Fetching trends for {domain}...")
     print(f"   Target ~{target_articles} articles ({trends_limit} trends × {personas_count} personas)")
+    print(f"   LLM model: {LLM_MODEL}")
 
     try:
         response = requests.get(trends_url, timeout=20)
@@ -270,7 +287,6 @@ def generate_matrix(config: dict):
     all_articles = []
     MAX_WORKERS = int(config.get("max_workers", 40))
     print(f"🚀 Starting generation for [{config.get('site_id')}]...")
-
     tasks = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         for round_idx, persona in enumerate(personas):
@@ -294,17 +310,15 @@ def generate_matrix(config: dict):
                 print(f"📦 Progress: {completed_count}/{len(tasks)}")
 
     print(f"✅ Generated {len(all_articles)} articles")
-
-    # 抽樣顯示 meta 長度（方便你 check Bing 要求）
     for sample in all_articles[:3]:
+        t = sample.get("title", "")
         md = sample.get("meta_description", "")
+        print(f"📰 Title sample ({len(t)} chars): {t}")
         print(f"📝 Meta sample ({len(md)} chars): {md}")
 
-    # ==================== D1 Injection ====================
     account_id = env_from_config(config, "cloudflare_account_id_env", "CLOUDFLARE_ACCOUNT_ID")
     database_id = env_from_config(config, "cloudflare_database_id_env", "CLOUDFLARE_DATABASE_ID")
     api_token = env_from_config(config, "cloudflare_api_token_env", "CLOUDFLARE_API_TOKEN")
-
     if not all([account_id, database_id, api_token]):
         print("❌ Missing Cloudflare credentials (check config + GitHub Secrets)")
         sys.exit(1)
@@ -313,7 +327,6 @@ def generate_matrix(config: dict):
     current_time = int(time.time())
     now = datetime.now()
     year, month, day = now.strftime("%Y"), now.strftime("%m"), now.strftime("%d")
-
     statements = []
     for idx, article in enumerate(all_articles):
         safe_keyword = "".join([c if c.isalnum() else "_" for c in article["keyword"]]).lower()
@@ -322,18 +335,17 @@ def generate_matrix(config: dict):
         ad_str = config.get("ad_verification")
         if ad_str and idx == 0:
             article_body += f"\n\nAdsterra verification string: {ad_str}"
-
+        title = fit_title(article.get("title", ""), keyword=article.get("keyword", ""))
         meta = fit_meta_description(
             article.get("meta_description", ""),
-            title=article.get("title", ""),
+            title=title,
             keyword=article.get("keyword", "")
         )
-
         sql = """INSERT OR REPLACE INTO articles
                  (title, keyword, body, persona_id, persona_type, search_volume, created_at, url_slug, meta_description)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);"""
         params = [
-            article["title"],
+            title,
             article["keyword"],
             article_body,
             article["persona_id"],
@@ -351,7 +363,6 @@ def generate_matrix(config: dict):
         "Content-Type": "application/json"
     }
     url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{database_id}/query"
-
     has_error = False
     for i in range(0, len(statements), chunk_size):
         chunk = statements[i:i + chunk_size]
@@ -370,7 +381,6 @@ def generate_matrix(config: dict):
     if has_error:
         print("❌ MISSION FAILED")
         sys.exit(1)
-
     print("🎉 All articles injected into D1!")
     generate_sitemap()
     print(f"🎉 [{config.get('site_id')}] Batch Complete!")
