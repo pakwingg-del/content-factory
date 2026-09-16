@@ -24,11 +24,28 @@ def env_from_config(config: dict, key: str, fallback_env: str = None):
 
 
 def get_indexnow_key(config: dict, site_id: str) -> str:
-    return (
-        (config.get("indexnow_key") or "").strip()
-        or (os.getenv(f"INDEXNOW_KEY_{site_id.upper()}") or "").strip()
-        or (os.getenv("INDEXNOW_KEY") or "").strip()
-    )
+    """Resolve IndexNow key from env. Never treat env var NAMES as the key value."""
+    candidates = []
+
+    env_name = (config.get("indexnow_key_env") or "").strip()
+    if env_name:
+        candidates.append(os.getenv(env_name))
+
+    raw = (config.get("indexnow_key") or "").strip()
+    if raw:
+        looks_like_env_name = raw.startswith("INDEXNOW_") or raw == "INDEXNOW_KEY"
+        if looks_like_env_name:
+            candidates.append(os.getenv(raw))
+        else:
+            candidates.append(raw)
+
+    candidates.append(os.getenv(f"INDEXNOW_KEY_{site_id.upper()}"))
+    candidates.append(os.getenv("INDEXNOW_KEY"))
+
+    for c in candidates:
+        if c and str(c).strip():
+            return str(c).strip()
+    return ""
 
 
 def normalize_domain(domain: str) -> str:

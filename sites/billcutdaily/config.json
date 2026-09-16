@@ -104,8 +104,8 @@
   "cloudflare_account_id_env": "CF_ACCOUNT_BILLCUTDAILY",
   "cloudflare_database_id_env": "CF_DB_BILLCUTDAILY",
   "cloudflare_api_token_env": "CF_TOKEN_BILLCUTDAILY",
-  "indexnow_key": "INDEXNOW_KEY",
   "ad_verification": "",
   "min_body_chars": 400,
-  "max_tokens": 900
+  "max_tokens": 900,
+  "indexnow_key_env": "INDEXNOW_KEY"
 }

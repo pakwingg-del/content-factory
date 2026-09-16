@@ -1,9 +1,9 @@
 # .github/workflows/generate-viralnn.yml
 name: Generate ViralNN
 on:
-  workflow_dispatch:           # GitHub 網頁手動 Run
+  workflow_dispatch:
   repository_dispatch:
-    types: [external_trigger]  # 外部 API 觸發（你而家用緊呢種）
+    types: [external_trigger]
 
 jobs:
   generate:
@@ -14,15 +14,21 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install requests openai google-auth google-api-python-client
+
       - name: Generate + Inject
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_DATABASE_ID: ${{ secrets.CLOUDFLARE_DATABASE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python generator.py --site viralnn
+
+      - name: Submit IndexNow
+        env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_DATABASE_ID: ${{ secrets.CLOUDFLARE_DATABASE_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
-          # ... 其他 Google SA secrets
-        run: python generator.py --site viralnn
-      - name: Submit Indexing
-        run: python submit_indexing.py --site viralnn
+        run: python submit_indexing.py --site viralnn --hours 24 --limit 500

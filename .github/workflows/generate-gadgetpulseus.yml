@@ -31,3 +31,13 @@ jobs:
           CF_DB_GADGETPULSEUS: ${{ secrets.CF_DB_GADGETPULSEUS }}
           CF_TOKEN_GADGETPULSEUS: ${{ secrets.CF_TOKEN_GADGETPULSEUS }}
         run: python generator.py --site gadgetpulseus
+
+      - name: Submit IndexNow
+        env:
+          CF_ACCOUNT_GADGETPULSEUS: ${{ secrets.CF_ACCOUNT_GADGETPULSEUS }}
+          CF_DB_GADGETPULSEUS: ${{ secrets.CF_DB_GADGETPULSEUS }}
+          CF_TOKEN_GADGETPULSEUS: ${{ secrets.CF_TOKEN_GADGETPULSEUS }}
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+          INDEXNOW_KEY_GADGETPULSEUS: ${{ secrets.INDEXNOW_KEY_GADGETPULSEUS }}
+        run: python submit_indexing.py --site gadgetpulseus --hours 24 --limit 500
+
