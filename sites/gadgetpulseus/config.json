@@ -47,5 +47,5 @@
   "cloudflare_database_id_env": "CF_DB_GADGETPULSEUS",
   "cloudflare_api_token_env": "CF_TOKEN_GADGETPULSEUS",
   "ad_verification": "",
-  "indexnow_key_env": "INDEXNOW_KEY"
+  "indexnow_key_env": "INDEXNOW_KEY_GADGETPULSEUS"
 }

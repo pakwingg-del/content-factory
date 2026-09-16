@@ -107,5 +107,5 @@
   "ad_verification": "",
   "min_body_chars": 400,
   "max_tokens": 900,
-  "indexnow_key_env": "INDEXNOW_KEY"
+  "indexnow_key_env": "INDEXNOW_KEY_BILLCUTDAILY"
 }
