@@ -9,6 +9,6 @@
   "trends_limit": 100,
   "personas_count": 5,
   "articles_per_run": 500,
-  "max_workers": 50,
+  "max_workers": 8,
   "persona_style": "default"
 }

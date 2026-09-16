@@ -8,7 +8,7 @@
   "trends_url": "https://raw.githubusercontent.com/pakwingg-del/Trends-Hub/main/trends_entertainment.json",
   "trends_limit": 100,
   "personas_count": 5,
-  "max_workers": 50,
+  "max_workers": 8,
   "persona_style": "celebrity",
   "content_angle": "Write celebrity and entertainment news for American readers. Focus on drama, viral moments, relationships, red carpet, streaming shows, music, and Hollywood buzz. Avoid pure sports scores, finance, and crypto.",
   "keyword_filter": [

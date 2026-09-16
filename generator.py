@@ -16,8 +16,10 @@ client = OpenAI(
 )
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-flash")
-THIN_STREAK = 0
-THIN_STREAK_LIMIT = 10
+LLM_EXTRA_BODY = {
+    "thinking": {"type": "disabled"},
+    "reasoning_effort": "none",
+}
 
 
 DEFAULT_PERSONA_MATRIX = [
@@ -169,6 +171,23 @@ def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
     return text
 
 
+
+def extract_text(completion) -> str:
+    """DeepSeek flash may put body in reasoning_* when thinking is on; prefer content."""
+    msg = completion.choices[0].message
+    text = (getattr(msg, "content", None) or "") or ""
+    if not str(text).strip():
+        text = (
+            getattr(msg, "reasoning_content", None)
+            or getattr(msg, "reasoning", None)
+            or ""
+        )
+    if not str(text).strip() and getattr(msg, "model_extra", None):
+        extra = msg.model_extra or {}
+        text = extra.get("reasoning_content") or extra.get("reasoning") or ""
+    return (text or "").strip()
+
+
 def fetch_single_article(persona_tuple, seed, last_updated, site_config):
     round_idx, current_persona = persona_tuple
     query = seed["query"]
@@ -179,7 +198,7 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         f"- Title MUST be 50-65 characters including spaces. Count carefully. Never exceed 65.\n"
         f"- Curiosity-driven, specific, natural. No ALL CAPS. No repeating the same formula.\n"
         f"- Write the main article body (800-1100 words).\n"
-        f"- Do NOT write a conclusion yet.\n"
+        f"- After the body, add a short closing opinion (2-3 sentences).\n"
         f"- Use American English."
     )
     try:
@@ -189,71 +208,54 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Write a viral article about: {query}"}
             ],
-            max_tokens=1300,
-            temperature=0.85
+            max_tokens=1600,
+            temperature=0.85,
+            extra_body=LLM_EXTRA_BODY,
         )
-        content = completion.choices[0].message.content.strip()
-
-        global THIN_STREAK
-        content = content or ""
-        print(f"model reply chars: {len(content)} first80: {content[:80]!r}")
+        content = extract_text(completion)
+        finish = getattr(completion.choices[0], "finish_reason", None)
+        print(
+            f"model reply chars: {len(content)} finish: {finish} first80: {content[:80]!r}"
+        )
         if len(content) < 100:
-            THIN_STREAK += 1
-            print(f"⚠️ thin model reply streak={THIN_STREAK}/{THIN_STREAK_LIMIT}")
-            if THIN_STREAK >= THIN_STREAK_LIMIT:
-                print("❌ Too many empty/thin model replies — aborting run")
-                sys.exit(1)
+            print(f"⚠️ thin/empty model reply for {query!r} — skip")
             return None
-        else:
-            THIN_STREAK = 0
-        lines = [line.strip() for line in content.split("\n") if line.strip()]
+
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
         raw_title = lines[0] if lines else query
         clean_title = fit_title(raw_title, keyword=query, min_len=50, max_len=65)
 
-        meta_prompt = (
-            f"Write ONE unique SEO meta description for a news article.\n"
-            f"Title: \"{clean_title}\"\n"
-            f"Topic: {query}\n"
-            f"STRICT RULES:\n"
-            f"- Length MUST be between 150 and 160 characters including spaces\n"
-            f"- Count carefully before answering\n"
-            f"- Include the topic naturally\n"
-            f"- Click-worthy but not spammy\n"
-            f"- American English\n"
-            f"- Output ONLY the description text, no quotes, no labels"
-        )
-        meta_completion = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[{"role": "user", "content": meta_prompt}],
-            max_tokens=100,
-            temperature=0.7
-        )
+        body_only = "\n".join(lines[1:]).strip() if len(lines) > 1 else content
+        if len(re.sub(r"\s+", " ", body_only)) < 200:
+            body_only = content
+
+        # One API call: meta from local fitter (no second LLM call)
         meta_description = fit_meta_description(
-            meta_completion.choices[0].message.content.strip(),
+            "",
             title=clean_title,
             keyword=query,
             min_len=150,
-            max_len=160
+            max_len=160,
         )
 
-        opinion_prompt = (
-            f"Based on the article about '{query}', write 2-3 insightful sentences as a personal opinion and conclusion. "
-            f"Sound like a real experienced journalist."
-        )
-        opinion_completion = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=[{"role": "user", "content": opinion_prompt}],
-            max_tokens=180,
-            temperature=0.9
-        )
-        opinion = opinion_completion.choices[0].message.content.strip()
-        final_content = content + "\n\n<h3>Final Thoughts</h3>\n<p>" + opinion + "</p>"
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", body_only) if p.strip()]
+        if "final thoughts" in body_only.lower():
+            final_content = body_only
+        elif len(paragraphs) >= 2:
+            closer = re.sub(r"<[^>]+>", "", paragraphs[-1]).strip()
+            main = "\n\n".join(paragraphs[:-1])
+            final_content = (
+                main + "\n\n<h3>Final Thoughts</h3>\n<p>" + closer[:500] + "</p>"
+            )
+        else:
+            final_content = body_only
 
         image_path = get_pexels_image(query)
         if image_path:
             final_content = (
                 f'<img src="{image_path}" alt="{clean_title}" '
-                f'style="max-width:100%; height:auto; border-radius:8px;"><br><br>' + final_content
+                f'style="max-width:100%; height:auto; border-radius:8px;"><br><br>'
+                + final_content
             )
 
         body_text = re.sub(r"<[^>]+>", " ", final_content or "")
@@ -278,6 +280,7 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
     except Exception as e:
         print(f"⚠️ Error processing {query}: {e}")
         return None
+
 
 
 def generate_sitemap():
@@ -344,7 +347,7 @@ def generate_matrix(config: dict):
         sys.exit(1)
 
     all_articles = []
-    MAX_WORKERS = int(config.get("max_workers", 40))
+    MAX_WORKERS = int(config.get("max_workers", 8))
     print(f"🚀 Starting generation for [{config.get('site_id')}]...")
     tasks = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -368,7 +371,13 @@ def generate_matrix(config: dict):
             if completed_count % 50 == 0 or completed_count == len(tasks):
                 print(f"📦 Progress: {completed_count}/{len(tasks)}")
 
-    print(f"✅ Generated {len(all_articles)} articles")
+    attempted = len(tasks)
+    kept = len(all_articles)
+    print(f"✅ Generated {kept}/{attempted} usable articles")
+    min_keep = max(5, int(attempted * 0.3))
+    if kept < min_keep:
+        print(f"❌ Too few usable articles ({kept} < {min_keep}) — abort before D1 inject")
+        sys.exit(1)
     for sample in all_articles[:3]:
         t = sample.get("title", "")
         md = sample.get("meta_description", "")
