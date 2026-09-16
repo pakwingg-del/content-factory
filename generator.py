@@ -31,9 +31,117 @@ DEFAULT_PERSONA_MATRIX = [
 ]
 FINANCIAL_PERSONA_MATRIX = [
     "Sharp financial analyst, clear data-driven language, focus on market impact and investor implications.",
-    "Crypto Twitter trader voice, urgent, slang-heavy, FOMO and risk warnings mixed.",
-    "Skeptical market observer, question hype, point out risks and who benefits."
+    "Practical household budget coach, plain English about bills, prices, and what to do next.",
+    "Skeptical market observer, question hype, point out risks and who benefits.",
+    "Consumer deals reporter, focus on rates, fees, refinancing, and money-saving angles for US readers.",
+    "Inflation and paycheck reality voice, explain how fed/CPI/wages hit groceries, rent, and credit cards.",
 ]
+
+EVERGREEN_FINANCE_SEEDS = [
+    "10 year treasury yield",
+    "mortgage rates today",
+    "refinance mortgage rates",
+    "social security cola",
+    "irs tax brackets",
+    "401k contribution limit",
+    "credit card apr",
+    "fed meeting schedule",
+    "federal funds rate",
+    "cpi inflation report",
+    "core pce inflation",
+    "average US rent",
+    "30 year mortgage rate",
+    "auto loan rates",
+    "student loan repayment",
+    "savings account apy",
+    "cd rates today",
+    "gas prices US average",
+    "grocery inflation",
+    "walmart prices",
+    "costco deals",
+    "credit score tips",
+    "debt snowball vs avalanche",
+    "fha loan requirements",
+    "heloc rates",
+    "unemployment rate US",
+    "minimum wage by state",
+    "overdraft fees banks",
+    "stimulus check eligibility",
+    "medicare part b premium",
+    "social security retirement age",
+    "roth ira income limits",
+    "hsa contribution limit",
+    "property tax assessment",
+    "home insurance rates",
+    "car insurance quotes",
+    "utility bills rising",
+    "egg prices US",
+    "beef prices inflation",
+    "used car prices",
+    "airline baggage fees",
+    "bank of america savings rate",
+    "chase sapphire annual fee",
+    "paypal credit apr",
+    "layaway vs credit",
+    "buy now pay later risks",
+    "paycheck to paycheck budget",
+    "emergency fund how much",
+    "debt consolidation loan",
+    "personal loan rates",
+    "treasury bill auction",
+    "tips inflation bonds",
+    "municipal bond yields",
+    "dow jones today",
+    "s&p 500 outlook",
+    "nasdaq composite",
+    "oil price WTI",
+    "gold price today",
+    "dollar index dxy",
+    "housing inventory US",
+    "new home sales",
+    "existing home sales",
+    "foreclosure rates",
+    "eviction moratorium status",
+    "child tax credit update",
+    "earned income tax credit",
+    "standard deduction amount",
+    "estimated tax payments",
+    "capital gains tax rate",
+    "crypto tax reporting irs",
+    "gig worker taxes",
+    "tips as taxable income",
+    "401k early withdrawal penalty",
+    "hardship withdrawal rules",
+    "pension vs 401k",
+    "annuity fees explained",
+    "long term care insurance cost",
+    "cobra health insurance cost",
+    "short term health insurance",
+    "high deductible health plan",
+    "fsa vs hsa",
+    "flexible spending deadline",
+    "open enrollment checklist",
+    "medicare advantage vs supplement",
+    "social security earnings test",
+    "rmd required minimum distribution",
+    "qualified charitable distribution",
+    "backdoor roth ira",
+    "mega backdoor roth",
+    "net worth calculator tips",
+    "debt to income ratio mortgage",
+    "points vs no points mortgage",
+    "closing costs explained",
+    "escrow shortage reasons",
+    "pmi removal requirements",
+    "va loan benefits",
+    "usda rural housing loan",
+    "first time homebuyer programs",
+    "down payment assistance",
+    "rent vs buy calculator",
+    "landlord rent increase limits",
+]
+
+
 
 
 def load_site_config(site_id: str) -> dict:
@@ -197,18 +305,20 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         f"- The VERY FIRST LINE must be the title only (no labels like TITLE: or BREAKING:).\n"
         f"- Title MUST be 50-65 characters including spaces. Count carefully. Never exceed 65.\n"
         f"- Curiosity-driven, specific, natural. No ALL CAPS. No repeating the same formula.\n"
-        f"- Write the main article body (800-1100 words).\n"
+        f"- Write 450-700 words. Do not write 1000+ words.\n"
         f"- After the body, add a short closing opinion (2-3 sentences).\n"
         f"- Use American English."
     )
     try:
+        max_tokens = int(site_config.get("max_tokens", 900))
+        min_body_chars = int(site_config.get("min_body_chars", 400))
         completion = client.chat.completions.create(
             model=LLM_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Write a viral article about: {query}"}
             ],
-            max_tokens=1600,
+            max_tokens=max_tokens,
             temperature=0.85,
             extra_body=LLM_EXTRA_BODY,
         )
@@ -261,7 +371,7 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         body_text = re.sub(r"<[^>]+>", " ", final_content or "")
         body_text = re.sub(r"\s+", " ", body_text).strip()
         clean_title = fit_title(clean_title, keyword=query)
-        if len(clean_title) < 40 or len(body_text) < 400:
+        if len(clean_title) < 40 or len(body_text) < min_body_chars:
             print(
                 f"⚠️ drop thin article: {query!r} title={len(clean_title)} body={len(body_text)}"
             )
@@ -315,32 +425,60 @@ def generate_matrix(config: dict):
             key=lambda x: (x.get("increase", 0), x.get("search_volume", 0)),
             reverse=True
         )
-        # Niche filters from site config (include OR; exclude any match)
+        # Exclude always; prefer filter hits; pad with evergreen if short of trends_limit
         kw_filter = [k.lower() for k in (config.get("keyword_filter") or []) if k]
         kw_exclude = [k.lower() for k in (config.get("keyword_exclude") or []) if k]
+        evergreen = config.get("evergreen_seeds") or (
+            EVERGREEN_FINANCE_SEEDS if (config.get("persona_style") or "").lower() == "financial"
+            else []
+        )
 
-        def _seed_ok(seed):
-            q = (seed.get("query") or "").lower()
-            if not q:
-                return False
-            if kw_exclude and any(x in q for x in kw_exclude):
-                return False
-            if kw_filter and not any(x in q for x in kw_filter):
-                return False
-            return True
+        def _excluded(q: str) -> bool:
+            q = (q or "").lower()
+            return bool(kw_exclude and any(x in q for x in kw_exclude))
 
-        if kw_filter or kw_exclude:
-            before = len(trending_seeds)
-            trending_seeds = [s for s in trending_seeds if _seed_ok(s)]
-            print(
-                f"🧹 Filter: {before} → {len(trending_seeds)} "
-                f"(filter={len(kw_filter)} exclude={len(kw_exclude)})"
-            )
-            if len(trending_seeds) < 5:
-                print("❌ Too few trends after keyword_filter/exclude — check config + Trends JSON")
-                sys.exit(1)
+        def _filter_hit(q: str) -> bool:
+            q = (q or "").lower()
+            if not kw_filter:
+                return True
+            return any(x in q for x in kw_filter)
 
-        seeds = trending_seeds[:trends_limit]
+        before = len(trending_seeds)
+        trending_seeds = [
+            s for s in trending_seeds
+            if (s.get("query") or "").strip() and not _excluded(s.get("query", ""))
+        ]
+        hits = [s for s in trending_seeds if _filter_hit(s.get("query", ""))]
+        rest = [s for s in trending_seeds if not _filter_hit(s.get("query", ""))]
+        # Prefer filter hits, then other non-excluded live trends
+        ordered = hits + rest
+        print(
+            f"🧹 Filter: {before} → live {len(ordered)} "
+            f"(hits={len(hits)} other={len(rest)} exclude={len(kw_exclude)})"
+        )
+
+        seeds = ordered[:trends_limit]
+        if len(seeds) < trends_limit and evergreen:
+            have = {(s.get("query") or "").lower() for s in seeds}
+            for q in evergreen:
+                if len(seeds) >= trends_limit:
+                    break
+                ql = q.lower()
+                if ql in have or _excluded(q):
+                    continue
+                seeds.append({
+                    "query": q,
+                    "search_volume": 0,
+                    "increase": 0,
+                    "source": "evergreen",
+                })
+                have.add(ql)
+            print(f"🌿 Evergreen pad → {len(seeds)}/{trends_limit} seeds")
+
+        if len(seeds) < 5:
+            print("❌ Too few seeds after filter/exclude/evergreen — check config + Trends JSON")
+            sys.exit(1)
+
         print(f"✅ Loaded Top {len(seeds)} trends")
     except Exception as e:
         print(f"❌ Error fetching trends: {e}")
