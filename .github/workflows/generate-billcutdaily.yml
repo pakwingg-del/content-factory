@@ -25,6 +25,7 @@ jobs:
       - name: Generate Content + D1
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           CF_ACCOUNT_BILLCUTDAILY: ${{ secrets.CF_ACCOUNT_BILLCUTDAILY }}
           CF_DB_BILLCUTDAILY: ${{ secrets.CF_DB_BILLCUTDAILY }}

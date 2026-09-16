@@ -16,6 +16,9 @@ client = OpenAI(
 )
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-flash")
+THIN_STREAK = 0
+THIN_STREAK_LIMIT = 10
+
 
 DEFAULT_PERSONA_MATRIX = [
     "Tabloid journalist, use heavy dramatic language, ALL CAPS hooks, shocking reveals, urgent tone, and American sensational style.",
@@ -119,8 +122,17 @@ def fit_title(text, keyword="", min_len=50, max_len=65):
             cut = cut.rsplit(" ", 1)[0]
         t = cut.rstrip(" ,.;:|-—") + "…"
 
-    if len(t) < 20:
-        t = (keyword or "Trending US story")[:max_len]
+    # Keep padded title; never collapse back to bare keyword
+    if len(t) < 40 and keyword:
+        extra = f" — {keyword} update"
+        if extra.lower() not in t.lower():
+            t = (t + extra).strip()
+        t = " ".join(t.split())
+        if len(t) > max_len:
+            cut = t[: max_len - 1]
+            if " " in cut:
+                cut = cut.rsplit(" ", 1)[0]
+            t = cut.rstrip(" ,.;:|-—") + "…"
 
     return t
 
@@ -181,6 +193,19 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
             temperature=0.85
         )
         content = completion.choices[0].message.content.strip()
+
+        global THIN_STREAK
+        content = content or ""
+        print(f"model reply chars: {len(content)} first80: {content[:80]!r}")
+        if len(content) < 100:
+            THIN_STREAK += 1
+            print(f"⚠️ thin model reply streak={THIN_STREAK}/{THIN_STREAK_LIMIT}")
+            if THIN_STREAK >= THIN_STREAK_LIMIT:
+                print("❌ Too many empty/thin model replies — aborting run")
+                sys.exit(1)
+            return None
+        else:
+            THIN_STREAK = 0
         lines = [line.strip() for line in content.split("\n") if line.strip()]
         raw_title = lines[0] if lines else query
         clean_title = fit_title(raw_title, keyword=query, min_len=50, max_len=65)
@@ -231,6 +256,15 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
                 f'style="max-width:100%; height:auto; border-radius:8px;"><br><br>' + final_content
             )
 
+        body_text = re.sub(r"<[^>]+>", " ", final_content or "")
+        body_text = re.sub(r"\s+", " ", body_text).strip()
+        clean_title = fit_title(clean_title, keyword=query)
+        if len(clean_title) < 40 or len(body_text) < 400:
+            print(
+                f"⚠️ drop thin article: {query!r} title={len(clean_title)} body={len(body_text)}"
+            )
+            return None
+
         return {
             "keyword": query,
             "persona_id": round_idx + 1,
@@ -278,6 +312,31 @@ def generate_matrix(config: dict):
             key=lambda x: (x.get("increase", 0), x.get("search_volume", 0)),
             reverse=True
         )
+        # Niche filters from site config (include OR; exclude any match)
+        kw_filter = [k.lower() for k in (config.get("keyword_filter") or []) if k]
+        kw_exclude = [k.lower() for k in (config.get("keyword_exclude") or []) if k]
+
+        def _seed_ok(seed):
+            q = (seed.get("query") or "").lower()
+            if not q:
+                return False
+            if kw_exclude and any(x in q for x in kw_exclude):
+                return False
+            if kw_filter and not any(x in q for x in kw_filter):
+                return False
+            return True
+
+        if kw_filter or kw_exclude:
+            before = len(trending_seeds)
+            trending_seeds = [s for s in trending_seeds if _seed_ok(s)]
+            print(
+                f"🧹 Filter: {before} → {len(trending_seeds)} "
+                f"(filter={len(kw_filter)} exclude={len(kw_exclude)})"
+            )
+            if len(trending_seeds) < 5:
+                print("❌ Too few trends after keyword_filter/exclude — check config + Trends JSON")
+                sys.exit(1)
+
         seeds = trending_seeds[:trends_limit]
         print(f"✅ Loaded Top {len(seeds)} trends")
     except Exception as e:
