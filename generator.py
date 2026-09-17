@@ -208,64 +208,48 @@ def get_pexels_image(query):
     return None
 
 
-def fit_title(text, keyword="", min_len=50, max_len=65):
-    """強制 title 50–65 字元（Bing 警告 >70）。"""
-    t = (text or "").strip()
-    t = re.sub(r'^["\']|["\']$', "", t).strip()
+def fit_title(text, keyword="", min_len=50, max_len=70):
+    """Keep a real title; only pad when very short. Never force keyword update suffix."""
+    t = " ".join((text or "").strip().split())
+    t = re.sub(r'^["\']|["\']$', "", t)
     t = re.sub(
         r"^(FOR IMMEDIATE RELEASE|BREAKING NEWS|BREAKING|HEADLINE|TITLE|UPDATE)[:\s]*",
         "",
         t,
         flags=re.IGNORECASE
     ).strip()
-    t = " ".join(t.split())
-
-    if len(t) < min_len:
-        extra = f" — {keyword} update" if keyword else " — latest US update"
-        if extra.lower() not in t.lower():
-            t = (t + extra).strip()
+    # Already title-like (>=40) → do not append keyword suffix
+    if len(t) < 40 and keyword:
+        t = f"{t} — {keyword}".strip() if t else keyword
         t = " ".join(t.split())
-
     if len(t) > max_len:
-        cut = t[: max_len - 1]
+        cut = t[:max_len]
         if " " in cut:
             cut = cut.rsplit(" ", 1)[0]
-        t = cut.rstrip(" ,.;:|-—") + "…"
-
-    # Keep padded title; never collapse back to bare keyword
-    if len(t) < 40 and keyword:
-        extra = f" — {keyword} update"
-        if extra.lower() not in t.lower():
-            t = (t + extra).strip()
-        t = " ".join(t.split())
-        if len(t) > max_len:
-            cut = t[: max_len - 1]
-            if " " in cut:
-                cut = cut.rsplit(" ", 1)[0]
-            t = cut.rstrip(" ,.;:|-—") + "…"
-
+        t = cut.rstrip(" ,.;:|-—")
     return t
 
 
+
 def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
-    """強制 meta description 落喺 150–160 字元（Bing 建議）。"""
+    """Build a usable meta from title/keyword; avoid canned multi-filler spam."""
     text = (text or "").strip()
     text = re.sub(r'^["\']|["\']$', "", text).strip()
     text = " ".join(text.split())
-    fillers = [
-        f" Here's what is unfolding around {keyword} and why US readers are paying attention right now.",
-        f" See why {keyword} is trending and what it could mean for people across America today.",
-        f" A clear breakdown of {keyword}, the key claims, and why this story is gaining traction now.",
-    ]
+    if not text:
+        text = title or (f"Latest updates on {keyword}" if keyword else "Latest updates")
+    if len(text) < min_len:
+        extra = (
+            f" What US readers need to know about {keyword} right now."
+            if keyword else
+            " What readers need to know right now."
+        )
+        if extra.strip().lower() not in text.lower():
+            text = (text.rstrip(". ") + "." + extra).strip()
+        text = " ".join(text.split())
     guard = 0
-    while len(text) < min_len and guard < 5:
-        if not text:
-            text = title or f"Latest updates on {keyword}"
-        filler = fillers[guard % len(fillers)]
-        if filler.strip() not in text:
-            text = (text.rstrip(". ") + "." + filler).strip()
-        else:
-            text = (text + " Stay informed with the latest verified developments.").strip()
+    while len(text) < min_len and guard < 4:
+        text = (text + " More details inside.").strip()
         text = " ".join(text.split())
         guard += 1
     if len(text) > max_len:
@@ -273,9 +257,6 @@ def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
         if " " in cut:
             cut = cut.rsplit(" ", 1)[0]
         text = cut.rstrip(".,;:") + "…"
-    if len(text) < min_len:
-        pad = " More details inside."
-        text = (text + pad)[:max_len]
     return text
 
 
@@ -296,6 +277,45 @@ def extract_text(completion) -> str:
     return (text or "").strip()
 
 
+def to_html_paragraphs(text: str) -> str:
+    """Turn plain article text into <p> blocks + Final Thoughts."""
+    text = (text or "").strip()
+    if not text:
+        return "<p></p>"
+    chunks = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if len(chunks) <= 1:
+        # Single newlines only — split into short paragraphs by sentences
+        chunks = [
+            p.strip()
+            for p in re.split(r"(?<=[.!?])\s+(?=[A-Z])", text)
+            if len(p.strip()) > 40
+        ]
+    if not chunks:
+        chunks = [text]
+    # If still one giant blob, hard-wrap every ~3 sentences
+    if len(chunks) == 1 and len(chunks[0]) > 600:
+        sents = re.split(r"(?<=[.!?])\s+", chunks[0])
+        chunks = []
+        buf = []
+        for s in sents:
+            buf.append(s)
+            if len(buf) >= 3:
+                chunks.append(" ".join(buf))
+                buf = []
+        if buf:
+            chunks.append(" ".join(buf))
+    closer = chunks[-1]
+    main = chunks[:-1] if len(chunks) > 1 else chunks[:]
+    if len(chunks) == 1:
+        main = chunks
+        closer = ""
+    html = "".join(f"<p>{p}</p>" for p in main if p)
+    if closer and len(chunks) > 1:
+        html += f"<h3>Final Thoughts</h3><p>{closer}</p>"
+    return html
+
+
+
 def fetch_single_article(persona_tuple, seed, last_updated, site_config):
     round_idx, current_persona = persona_tuple
     query = seed["query"]
@@ -303,9 +323,11 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         f"You are a: {current_persona}. Write a unique, engaging viral news article for an American audience.\n"
         f"CRITICAL RULES:\n"
         f"- The VERY FIRST LINE must be the title only (no labels like TITLE: or BREAKING:).\n"
-        f"- Title MUST be 50-65 characters including spaces. Count carefully. Never exceed 65.\n"
+        f"- Title 50-70 characters. Never append the raw keyword. Never end with an em dash plus keyword.\n"
         f"- Curiosity-driven, specific, natural. No ALL CAPS. No repeating the same formula.\n"
         f"- Write 450-700 words. Do not write 1000+ words.\n"
+        f"- Short paragraphs: 2-4 sentences each, blank line between paragraphs.\n"
+        f"- Do not repeat the title in the body.\n"
         f"- After the body, add a short closing opinion (2-3 sentences).\n"
         f"- Use American English."
     )
@@ -333,32 +355,33 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
 
         lines = [line.strip() for line in content.splitlines() if line.strip()]
         raw_title = lines[0] if lines else query
-        clean_title = fit_title(raw_title, keyword=query, min_len=50, max_len=65)
+        clean_title = fit_title(raw_title, keyword=query, min_len=50, max_len=70)
 
-        body_only = "\n".join(lines[1:]).strip() if len(lines) > 1 else content
+        body_lines = lines[1:]
+        # Model often repeats the title on the second line
+        if body_lines:
+            maybe = fit_title(body_lines[0], keyword=query, min_len=0, max_len=70)
+            if maybe[:40].lower() == clean_title[:40].lower():
+                body_lines = body_lines[1:]
+
+        body_only = "\n".join(body_lines).strip()
         if len(re.sub(r"\s+", " ", body_only)) < 200:
-            body_only = content
+            raw_lines = [ln for ln in content.splitlines() if ln.strip()]
+            body_only = "\n".join(raw_lines[1:]).strip() or content
 
-        # One API call: meta from local fitter (no second LLM call)
+        # One API call: meta from title (not empty filler string)
         meta_description = fit_meta_description(
-            "",
+            clean_title,
             title=clean_title,
             keyword=query,
             min_len=150,
             max_len=160,
         )
 
-        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", body_only) if p.strip()]
-        if "final thoughts" in body_only.lower():
+        if "<p>" in body_only.lower() or "final thoughts" in body_only.lower():
             final_content = body_only
-        elif len(paragraphs) >= 2:
-            closer = re.sub(r"<[^>]+>", "", paragraphs[-1]).strip()
-            main = "\n\n".join(paragraphs[:-1])
-            final_content = (
-                main + "\n\n<h3>Final Thoughts</h3>\n<p>" + closer[:500] + "</p>"
-            )
         else:
-            final_content = body_only
+            final_content = to_html_paragraphs(body_only)
 
         image_path = get_pexels_image(query)
         if image_path:
@@ -370,7 +393,7 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
 
         body_text = re.sub(r"<[^>]+>", " ", final_content or "")
         body_text = re.sub(r"\s+", " ", body_text).strip()
-        clean_title = fit_title(clean_title, keyword=query)
+        clean_title = fit_title(clean_title, keyword=query, min_len=50, max_len=70)
         if len(clean_title) < 40 or len(body_text) < min_body_chars:
             print(
                 f"⚠️ drop thin article: {query!r} title={len(clean_title)} body={len(body_text)}"
