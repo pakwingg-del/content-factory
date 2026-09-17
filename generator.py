@@ -36,6 +36,13 @@ FINANCIAL_PERSONA_MATRIX = [
     "Consumer deals reporter, focus on rates, fees, refinancing, and money-saving angles for US readers.",
     "Inflation and paycheck reality voice, explain how fed/CPI/wages hit groceries, rent, and credit cards.",
 ]
+CELEBRITY_PERSONA_MATRIX = [
+    "Red-carpet gossip columnist, witty and specific about fashion moments, relationships, and Hollywood buzz — never generic.",
+    "Streaming-culture critic, focus on shows, trailers, casting news, and why a release is trending with US viewers.",
+    "Music-industry beat writer, chart moves, tours, feuds, and what fans are arguing about right now.",
+    "Celebrity-finance adjacent observer, net-worth rumors, brand deals, and lifestyle flexes framed as entertainment news.",
+    "Social-media virality reporter, TikTok/Instagram moments, clapbacks, and the 24-hour drama cycle without canned templates.",
+]
 
 EVERGREEN_FINANCE_SEEDS = [
     "10 year treasury yield",
@@ -167,6 +174,8 @@ def get_persona_matrix(config: dict):
     style = (config.get("persona_style") or "default").lower()
     if style == "financial":
         return FINANCIAL_PERSONA_MATRIX
+    if style == "celebrity":
+        return CELEBRITY_PERSONA_MATRIX
     return DEFAULT_PERSONA_MATRIX
 
 
@@ -232,31 +241,45 @@ def fit_title(text, keyword="", min_len=50, max_len=70):
 
 
 def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
-    """Build a usable meta from title/keyword; avoid canned multi-filler spam."""
+    """150–160 chars from title as who-affected / money-math half-sentence; one soft pad max."""
+    banned = re.compile(r"here's what is unfolding", re.IGNORECASE)
     text = (text or "").strip()
     text = re.sub(r'^["\']|["\']$', "", text).strip()
+    text = banned.sub("", text)
     text = " ".join(text.split())
-    if not text:
-        text = title or (f"Latest updates on {keyword}" if keyword else "Latest updates")
+    base = title or keyword or "Latest updates"
+    base = banned.sub("", base).strip()
+    if not text or banned.search(text) or len(text) < 40:
+        # Who-affected / money-math half-sentence seeded from title
+        if keyword:
+            text = (
+                f"{base.rstrip('.')} — who it hits, what it costs, and the money-math "
+                f"US readers care about on {keyword}."
+            )
+        else:
+            text = (
+                f"{base.rstrip('.')} — who it hits, what changes next, and why it "
+                f"matters for American readers right now."
+            )
+        text = " ".join(text.split())
+    # At most one soft pad sentence (no spam fillers / "More details inside" loops)
     if len(text) < min_len:
-        extra = (
-            f" What US readers need to know about {keyword} right now."
+        soft = (
+            f" Quick read on who is affected and what {keyword} means for wallets."
             if keyword else
-            " What readers need to know right now."
+            " Quick read on who is affected and what changes next."
         )
-        if extra.strip().lower() not in text.lower():
-            text = (text.rstrip(". ") + "." + extra).strip()
+        if soft.strip().lower() not in text.lower():
+            text = (text.rstrip(". ") + "." + soft).strip()
         text = " ".join(text.split())
-    guard = 0
-    while len(text) < min_len and guard < 4:
-        text = (text + " More details inside.").strip()
-        text = " ".join(text.split())
-        guard += 1
+    text = banned.sub("", text)
+    text = " ".join(text.split())
     if len(text) > max_len:
         cut = text[: max_len - 1]
         if " " in cut:
             cut = cut.rsplit(" ", 1)[0]
         text = cut.rstrip(".,;:") + "…"
+    # If still short after one pad + truncate path, leave as-is (better short than spam)
     return text
 
 
@@ -316,33 +339,87 @@ def to_html_paragraphs(text: str) -> str:
 
 
 
+
+TITLE_QUIET_RE = re.compile(r"^The\s+Quiet\b", re.IGNORECASE)
+TITLE_WHO_THAT_RE = re.compile(r"^The\s+.+\s+(Who|That)\b", re.IGNORECASE)
+
+
+def is_template_title(title: str) -> bool:
+    t = (title or "").strip()
+    if not t:
+        return True
+    if TITLE_QUIET_RE.match(t):
+        return True
+    if TITLE_WHO_THAT_RE.match(t):
+        return True
+    return False
+
+
+def rewrite_template_title(title: str, keyword: str = "") -> str:
+    """Light rewrite: strip Quiet / rephrase Who|That templates rather than ship."""
+    t = " ".join((title or "").strip().split())
+    t = re.sub(r'^["\']|["\']$', "", t)
+    kw = (keyword or "").strip()
+    if TITLE_QUIET_RE.match(t):
+        rest = re.sub(r"^The\s+Quiet\s+", "", t, flags=re.IGNORECASE).strip()
+        if rest and not rest[0].isupper():
+            rest = rest[0].upper() + rest[1:]
+        t = f"{rest} — what changed for US readers" if rest else (
+            f"What {kw} means for US readers now" if kw else "What changed for US readers now"
+        )
+    elif TITLE_WHO_THAT_RE.match(t):
+        # "The X Who/That Y" → concrete non-formula frame
+        body = re.sub(r"^The\s+", "", t, count=1, flags=re.IGNORECASE)
+        body = re.sub(r"\s+(Who|That)\b", ",", body, count=1, flags=re.IGNORECASE)
+        body = " ".join(body.split()).strip(" ,")
+        t = f"{body} — the fallout US fans are watching" if body else (
+            f"What {kw} means for US readers now" if kw else "What changed for US readers now"
+        )
+    t = " ".join(t.split())
+    if is_template_title(t):
+        t = f"What {kw or 'this story'} means for US readers now"
+    return fit_title(t, keyword=keyword, min_len=50, max_len=70)
+
+
 def fetch_single_article(persona_tuple, seed, last_updated, site_config):
     round_idx, current_persona = persona_tuple
     query = seed["query"]
+    angle = (site_config.get("content_angle") or "").strip()
     system_prompt = (
         f"You are a: {current_persona}. Write a unique, engaging viral news article for an American audience.\n"
         f"CRITICAL RULES:\n"
         f"- The VERY FIRST LINE must be the title only (no labels like TITLE: or BREAKING:).\n"
         f"- Title 50-70 characters. Never append the raw keyword. Never end with an em dash plus keyword.\n"
         f"- Curiosity-driven, specific, natural. No ALL CAPS. No repeating the same formula.\n"
-        f"- Write 450-700 words. Do not write 1000+ words.\n"
+        f"- NEVER start a title with 'The Quiet'. NEVER use 'The … Who/That …' title templates.\n"
+        f"- Write 450-700 words across 4-6+ short paragraphs. Do not write 1000+ words.\n"
         f"- Short paragraphs: 2-4 sentences each, blank line between paragraphs.\n"
         f"- Do not repeat the title in the body.\n"
         f"- After the body, add a short closing opinion (2-3 sentences).\n"
+        f"- Ban guarantee/cure/risk-free/always-works language. No medical or financial promises.\n"
         f"- Use American English."
     )
-    try:
-        max_tokens = int(site_config.get("max_tokens", 900))
-        min_body_chars = int(site_config.get("min_body_chars", 400))
-        completion = client.chat.completions.create(
+    if angle:
+        system_prompt += f"\nSITE ANGLE: {angle}"
+    user_prompt = f"Write a viral article about: {query}"
+    max_tokens = int(site_config.get("max_tokens", 900))
+    min_body_chars = int(site_config.get("min_body_chars", 400))
+
+    def _once(messages, temperature=0.85):
+        return client.chat.completions.create(
             model=LLM_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Write a viral article about: {query}"}
-            ],
+            messages=messages,
             max_tokens=max_tokens,
-            temperature=0.85,
+            temperature=temperature,
             extra_body=LLM_EXTRA_BODY,
+        )
+
+    try:
+        completion = _once(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
         )
         content = extract_text(completion)
         finish = getattr(completion.choices[0], "finish_reason", None)
@@ -356,6 +433,34 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
         lines = [line.strip() for line in content.splitlines() if line.strip()]
         raw_title = lines[0] if lines else query
         clean_title = fit_title(raw_title, keyword=query, min_len=50, max_len=70)
+
+        if is_template_title(clean_title):
+            print(f"🔁 template title rejected: {clean_title!r} — regenerate once")
+            strict = (
+                system_prompt
+                + "\nSTRICT RETRY: Title must NOT start with 'The Quiet' and must NOT match "
+                "'The … Who/That …'. Pick a concrete, non-formula headline."
+            )
+            completion2 = _once(
+                [
+                    {"role": "system", "content": strict},
+                    {
+                        "role": "user",
+                        "content": user_prompt
+                        + "\nAvoid Quiet/Who/That title templates. Fresh specific headline.",
+                    },
+                ],
+                temperature=0.95,
+            )
+            content2 = extract_text(completion2)
+            if len(content2) >= 100:
+                content = content2
+                lines = [line.strip() for line in content.splitlines() if line.strip()]
+                raw_title = lines[0] if lines else query
+                clean_title = fit_title(raw_title, keyword=query, min_len=50, max_len=70)
+            if is_template_title(clean_title):
+                print(f"✏️ rewrite template title: {clean_title!r}")
+                clean_title = rewrite_template_title(clean_title, keyword=query)
 
         body_lines = lines[1:]
         # Model often repeats the title on the second line
@@ -417,11 +522,8 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
 
 
 def generate_sitemap():
-    print("🗺️ Generating sitemap...")
-    try:
-        print("✅ Sitemap generated (placeholder)")
-    except Exception:
-        pass
+    # Workers serve dynamic /sitemap.xml from D1; generator does not write one.
+    print("🗺️ Sitemap skipped — Cloudflare Workers own /sitemap.xml from D1")
 
 
 def generate_matrix(config: dict):
@@ -473,11 +575,12 @@ def generate_matrix(config: dict):
         ]
         hits = [s for s in trending_seeds if _filter_hit(s.get("query", ""))]
         rest = [s for s in trending_seeds if not _filter_hit(s.get("query", ""))]
-        # Prefer filter hits, then other non-excluded live trends
-        ordered = hits + rest
+        dropped_other = len(rest)
+        # Hits only — do NOT append filter misses as other; evergreen pads the rest
+        ordered = hits
         print(
             f"🧹 Filter: {before} → live {len(ordered)} "
-            f"(hits={len(hits)} other={len(rest)} exclude={len(kw_exclude)})"
+            f"(hits={len(hits)} dropped_other={dropped_other} exclude={len(kw_exclude)})"
         )
 
         seeds = ordered[:trends_limit]
