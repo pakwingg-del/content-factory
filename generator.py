@@ -149,6 +149,35 @@ EVERGREEN_FINANCE_SEEDS = [
 ]
 
 
+EVERGREEN_CELEBRITY_SEEDS = [
+    "celebrity feud update",
+    "hollywood divorce rumors",
+    "red carpet fashion moment",
+    "netflix series premiere buzz",
+    "hollywood dating rumors",
+    "hollywood engagement news",
+    "hollywood wedding update",
+    "viral tiktok celebrity moment",
+    "hollywood movie trailer reaction",
+    "oscar nomination buzz",
+    "grammy performance reaction",
+    "celebrity baby news",
+    "hollywood breakup update",
+    "hollywood album release buzz",
+    "celebrity apology statement",
+    "hollywood interview viral clip",
+    "hollywood Instagram drama",
+    "celebrity health scare rumors",
+    "hollywood tour announcement",
+    "streaming show cliffhanger reaction",
+    "celebrity lawsuit update",
+    "hollywood award show outfit",
+    "celebrity couple appearance",
+    "hollywood podcast drama",
+    "hollywood reality TV fight",
+]
+
+
 
 
 def load_site_config(site_id: str) -> dict:
@@ -553,9 +582,19 @@ def generate_matrix(config: dict):
         # Exclude always; prefer filter hits; pad with evergreen if short of trends_limit
         kw_filter = [k.lower() for k in (config.get("keyword_filter") or []) if k]
         kw_exclude = [k.lower() for k in (config.get("keyword_exclude") or []) if k]
+        style = (config.get("persona_style") or "").lower()
+        filter_mode = (config.get("filter_mode") or "").lower().strip()
+        if not filter_mode:
+            # Entertainment feeds are mostly person names — positive keyword_filter
+            # almost never hits; use exclude-only for celebrity style.
+            if style == "celebrity":
+                filter_mode = "exclude_only"
+            else:
+                filter_mode = "hits_only"
+
         evergreen = config.get("evergreen_seeds") or (
-            EVERGREEN_FINANCE_SEEDS if (config.get("persona_style") or "").lower() == "financial"
-            else []
+            EVERGREEN_FINANCE_SEEDS if style == "financial"
+            else (EVERGREEN_CELEBRITY_SEEDS if style == "celebrity" else [])
         )
 
         def _excluded(q: str) -> bool:
@@ -576,11 +615,18 @@ def generate_matrix(config: dict):
         hits = [s for s in trending_seeds if _filter_hit(s.get("query", ""))]
         rest = [s for s in trending_seeds if not _filter_hit(s.get("query", ""))]
         dropped_other = len(rest)
-        # Hits only — do NOT append filter misses as other; evergreen pads the rest
-        ordered = hits
+        if filter_mode == "exclude_only":
+            # Category feed already themed (e.g. entertainment); only drop excludes.
+            ordered = trending_seeds
+            dropped_other = 0
+        elif filter_mode == "prefer_hits":
+            ordered = hits + rest
+        else:
+            # hits_only — do NOT append filter misses; evergreen pads the rest
+            ordered = hits
         print(
-            f"🧹 Filter: {before} → live {len(ordered)} "
-            f"(hits={len(hits)} dropped_other={dropped_other} exclude={len(kw_exclude)})"
+            f"🧹 Filter[{filter_mode}]: {before} → live {len(ordered)} "
+            f"(hits={len(hits)} rest={len(rest)} exclude={len(kw_exclude)})"
         )
 
         seeds = ordered[:trends_limit]

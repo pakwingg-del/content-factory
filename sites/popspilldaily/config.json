@@ -84,5 +84,6 @@
   "ad_verification": "",
   "daily_volume": 160,
   "min_body_chars": 400,
-  "database_id_resolved": "96f72028-a1c4-498f-b492-096dda0af963"
+  "database_id_resolved": "96f72028-a1c4-498f-b492-096dda0af963",
+  "filter_mode": "exclude_only"
 }
