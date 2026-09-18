@@ -38,4 +38,4 @@ jobs:
           CF_DB_POPSPILLDAILY: ${{ secrets.CF_DB_POPSPILLDAILY }}
           CF_TOKEN_POPSPILLDAILY: ${{ secrets.CF_TOKEN_POPSPILLDAILY }}
           INDEXNOW_KEY_POPSPILLDAILY: ${{ secrets.INDEXNOW_KEY_POPSPILLDAILY }}
-        run: python submit_indexing.py --site popspilldaily --hours 24 --limit 500
+        run: python submit_indexing.py --site popspilldaily --from-last-run
