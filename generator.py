@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import os
 import time
 import requests
@@ -637,6 +638,38 @@ def fetch_single_article(persona_tuple, seed, last_updated, site_config):
 
 
 
+
+def write_last_run_urls(config: dict, url_slugs: list):
+    """Persist this run's canonical URLs for IndexNow (submit --from-last-run)."""
+    domain = (config.get("domain") or "").strip().lower()
+    domain = domain.replace("https://", "").replace("http://", "").strip("/")
+    if domain.startswith("www."):
+        domain = domain[4:]
+    urls = [f"https://{domain}/"]
+    seen = {urls[0]}
+    for slug in url_slugs:
+        slug = (slug or "").strip().strip("/")
+        if not slug:
+            continue
+        u = f"https://{domain}/{slug}/"
+        if u not in seen:
+            seen.add(u)
+            urls.append(u)
+    site_id = config.get("site_id") or "site"
+    out_path = Path(f"sites/{site_id}/last_run_urls.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "site_id": site_id,
+        "domain": domain,
+        "generated_at": datetime.now().isoformat(),
+        "article_count": max(0, len(urls) - 1),
+        "urls": urls,
+    }
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"📎 Wrote {out_path} ({len(urls)} URLs incl. homepage)")
+    return out_path
+
+
 def generate_sitemap():
     # Workers serve dynamic /sitemap.xml from D1; generator does not write one.
     print("🗺️ Sitemap skipped — Cloudflare Workers own /sitemap.xml from D1")
@@ -812,9 +845,11 @@ def generate_matrix(config: dict):
     now = datetime.now()
     year, month, day = now.strftime("%Y"), now.strftime("%m"), now.strftime("%d")
     statements = []
+    run_slugs = []
     for idx, article in enumerate(all_articles):
         safe_keyword = "".join([c if c.isalnum() else "_" for c in article["keyword"]]).lower()
         url_slug = f"{year}/{month}/{day}/{safe_keyword}_{idx}"
+        run_slugs.append(url_slug)
         article_body = article["body"]
         ad_str = config.get("ad_verification")
         if ad_str and idx == 0:
@@ -866,6 +901,7 @@ def generate_matrix(config: dict):
         print("❌ MISSION FAILED")
         sys.exit(1)
     print("🎉 All articles injected into D1!")
+    write_last_run_urls(config, run_slugs)
     generate_sitemap()
     print(f"🎉 [{config.get('site_id')}] Batch Complete!")
 
