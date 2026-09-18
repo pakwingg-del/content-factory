@@ -38,5 +38,4 @@ jobs:
           CF_DB_BILLCUTDAILY: ${{ secrets.CF_DB_BILLCUTDAILY }}
           CF_TOKEN_BILLCUTDAILY: ${{ secrets.CF_TOKEN_BILLCUTDAILY }}
           INDEXNOW_KEY_BILLCUTDAILY: ${{ secrets.INDEXNOW_KEY_BILLCUTDAILY }}
-        run: python submit_indexing.py --site billcutdaily --hours 24 --limit 500
-
+        run: python submit_indexing.py --site billcutdaily --from-last-run
