@@ -177,6 +177,93 @@ EVERGREEN_CELEBRITY_SEEDS = [
     "hollywood reality TV fight",
 ]
 
+EVERGREEN_NEWS_SEEDS = [
+    "breaking US news today",
+    "White House announcement",
+    "Supreme Court ruling",
+    "US election update",
+    "severe weather US",
+    "airline travel delays",
+    "gas prices US",
+    "school shooting news",
+    "police chase viral video",
+    "celebrity scandal update",
+    "sports championship final",
+    "NBA game highlights",
+    "NFL injury report",
+    "Olympics news",
+    "NASA space mission",
+    "AI chatbot controversy",
+    "social media ban debate",
+    "TikTok ban update",
+    "YouTube algorithm change",
+    "viral Reddit story",
+    "GoFundMe controversy",
+    "product recall FDA",
+    "FDA drug recall",
+    "consumer class action",
+    "cryptocurrency crash",
+    "stock market selloff",
+    "layoff news tech",
+    "union strike update",
+    "immigration policy news",
+    "border crossing update",
+    "hurricane forecast US",
+    "wildfire California",
+    "earthquake news",
+    "missing person alert",
+    "true crime update",
+    "streaming show cancelation",
+    "box office weekend",
+    "album release chart",
+    "gaming console shortage",
+    "cyber attack news",
+]
+
+EVERGREEN_TECH_SEEDS = [
+    "iPhone release rumors",
+    "Samsung Galaxy update",
+    "Google Pixel news",
+    "MacBook Pro refresh",
+    "iPad firmware update",
+    "AirPods Pro review",
+    "Android 16 features",
+    "Windows 11 update",
+    "NVIDIA GPU launch",
+    "AMD Ryzen chips",
+    "Intel Arrow Lake",
+    "Qualcomm Snapdragon laptop",
+    "Steam Deck OLED",
+    "PlayStation 5 Pro",
+    "Xbox Game Pass",
+    "Nintendo Switch 2",
+    "smart home Matter devices",
+    "Ring doorbell update",
+    "Tesla Autopilot news",
+    "EV charging network",
+    "USB-C mandate phones",
+    "foldable phone review",
+    "AI PC Copilot Plus",
+    "ChatGPT app update",
+    "Apple Intelligence features",
+    "Vision Pro apps",
+    "Meta Quest headset",
+    "drone regulations FAA",
+    "5G home internet",
+    "fiber ISP deals",
+    "SSD price drop",
+    "mechanical keyboard deals",
+    "monitor OLED gaming",
+    "webcam 4K review",
+    "router WiFi 7",
+    "cybersecurity breach",
+    "password manager breach",
+    "app store fee changes",
+    "OpenAI API pricing",
+    "robot vacuum mapping",
+]
+
+
 
 
 
@@ -574,7 +661,13 @@ def generate_matrix(config: dict):
         response = requests.get(trends_url, timeout=20)
         response.raise_for_status()
         data = response.json()
-        trending_seeds = data.get("trending_seeds", [])
+        trending_seeds = data.get("trending_seeds", []) or []
+        if not isinstance(trending_seeds, list):
+            print(f"⚠️ trending_seeds is {type(trending_seeds).__name__}, coercing to []")
+            trending_seeds = []
+        print(f"📥 Trends JSON: {len(trending_seeds)} seeds from {trends_url}")
+        if len(trending_seeds) == 0:
+            print("⚠️ Trends feed empty — will rely on evergreen pad if configured")
         trending_seeds.sort(
             key=lambda x: (x.get("increase", 0), x.get("search_volume", 0)),
             reverse=True
@@ -592,10 +685,23 @@ def generate_matrix(config: dict):
             else:
                 filter_mode = "hits_only"
 
-        evergreen = config.get("evergreen_seeds") or (
-            EVERGREEN_FINANCE_SEEDS if style == "financial"
-            else (EVERGREEN_CELEBRITY_SEEDS if style == "celebrity" else [])
-        )
+        evergreen = config.get("evergreen_seeds")
+        if not evergreen:
+            topic = (config.get("topic") or "").lower()
+            trends_url = (config.get("trends_url") or "").lower()
+            if style == "financial" or "finance" in trends_url:
+                evergreen = EVERGREEN_FINANCE_SEEDS
+            elif style == "celebrity" or "entertainment" in trends_url:
+                evergreen = EVERGREEN_CELEBRITY_SEEDS
+            elif (
+                "tech" in topic
+                or "gadget" in topic
+                or "tech" in trends_url
+                or "technology" in trends_url
+            ):
+                evergreen = EVERGREEN_TECH_SEEDS
+            else:
+                evergreen = EVERGREEN_NEWS_SEEDS
 
         def _excluded(q: str) -> bool:
             q = (q or "").lower()
