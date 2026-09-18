@@ -5,6 +5,7 @@ import time
 import argparse
 import requests
 from datetime import datetime
+from pathlib import Path
 
 
 def load_site_config(site_id: str) -> dict:
@@ -63,6 +64,21 @@ def to_canonical_url(domain: str, slug: str) -> str:
     return f"https://{domain}/{slug}/"
 
 
+def load_last_run_urls(site_id: str):
+    path = Path(f"sites/{site_id}/last_run_urls.json")
+    if not path.exists():
+        print(f"❌ last_run_urls.json not found: {path}")
+        print("   Run generator first, or omit --from-last-run to query D1.")
+        sys.exit(1)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    domain = normalize_domain(data.get("domain") or "")
+    urls = list(data.get("urls") or [])
+    print(f"📋 Loaded {len(urls)} URLs from {path} (this run, articles={data.get('article_count')})")
+    if urls[1:2]:
+        print(f"   sample: {urls[1]}")
+    return domain, urls
+
+
 def fetch_recent_urls(config: dict, hours: int = 24, limit: int = 500):
     domain = normalize_domain(config.get("domain") or "")
     if not domain:
@@ -116,7 +132,7 @@ def fetch_recent_urls(config: dict, hours: int = 24, limit: int = 500):
         return domain, []
 
 
-def submit_indexnow(domain: str, urls: list, key: str):
+def submit_indexnow(domain: str, urls: list, key: str, batch_size: int = 1000):
     if not urls:
         print("⚠️ No URLs to submit")
         return
@@ -125,11 +141,11 @@ def submit_indexnow(domain: str, urls: list, key: str):
         sys.exit(1)
 
     endpoint = "https://api.indexnow.org/indexnow"
-    batch_size = 200
+    batch_size = max(1, min(int(batch_size), 10000))
     key_location = f"https://{domain}/{key}.txt"
     print(f"🚀 IndexNow → host={domain}")
     print(f"   keyLocation=https://{domain}/<redacted>.txt")  # do not log key
-    print(f"   urls={len(urls)}")
+    print(f"   urls={len(urls)} batch_size={batch_size}")
 
     ok_batches = 0
     for i in range(0, len(urls), batch_size):
@@ -145,7 +161,7 @@ def submit_indexnow(domain: str, urls: list, key: str):
                 endpoint,
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=30
+                timeout=60
             )
             if r.status_code in (200, 202):
                 ok_batches += 1
@@ -156,14 +172,20 @@ def submit_indexnow(domain: str, urls: list, key: str):
             print(f"  ❌ Batch error: {e}")
         time.sleep(0.4)
 
-    print(f"🎉 IndexNow finished — ok batches: {ok_batches}")
+    print(f"🎉 IndexNow finished — ok batches: {ok_batches}/{ (len(urls) + batch_size - 1) // batch_size }")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Submit recent article URLs to IndexNow (Bing etc.)")
+    parser = argparse.ArgumentParser(description="Submit article URLs to IndexNow (Bing etc.)")
     parser.add_argument("--site", required=True, help="Site id, e.g. viralnn / popspilldaily")
-    parser.add_argument("--hours", type=int, default=24, help="Look back hours (default 24)")
-    parser.add_argument("--limit", type=int, default=500, help="Max article URLs (default 500)")
+    parser.add_argument(
+        "--from-last-run",
+        action="store_true",
+        help="Submit exactly the URLs written by the latest generator run (sites/<site>/last_run_urls.json)",
+    )
+    parser.add_argument("--hours", type=int, default=24, help="D1 lookback hours when not using --from-last-run (default 24)")
+    parser.add_argument("--limit", type=int, default=5000, help="Max article URLs for D1 mode (default 5000)")
+    parser.add_argument("--batch-size", type=int, default=1000, help="URLs per IndexNow POST (max 10000, default 1000)")
     parser.add_argument(
         "--url",
         action="append",
@@ -175,7 +197,11 @@ def main():
     print(f"[{datetime.now().isoformat()}] IndexNow for site={args.site}")
     config = load_site_config(args.site)
     key = get_indexnow_key(config, args.site)
-    domain, urls = fetch_recent_urls(config, hours=args.hours, limit=args.limit)
+
+    if args.from_last_run:
+        domain, urls = load_last_run_urls(args.site)
+    else:
+        domain, urls = fetch_recent_urls(config, hours=args.hours, limit=args.limit)
 
     extra = []
     for raw in args.url:
@@ -195,7 +221,7 @@ def main():
             seen.add(u)
             merged.append(u)
 
-    submit_indexnow(domain, merged, key)
+    submit_indexnow(domain, merged, key, batch_size=args.batch_size)
 
 
 if __name__ == "__main__":
