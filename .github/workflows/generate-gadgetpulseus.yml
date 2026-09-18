@@ -38,5 +38,4 @@ jobs:
           CF_DB_GADGETPULSEUS: ${{ secrets.CF_DB_GADGETPULSEUS }}
           CF_TOKEN_GADGETPULSEUS: ${{ secrets.CF_TOKEN_GADGETPULSEUS }}
           INDEXNOW_KEY_GADGETPULSEUS: ${{ secrets.INDEXNOW_KEY_GADGETPULSEUS }}
-        run: python submit_indexing.py --site gadgetpulseus --hours 24 --limit 500
-
+        run: python submit_indexing.py --site gadgetpulseus --from-last-run
