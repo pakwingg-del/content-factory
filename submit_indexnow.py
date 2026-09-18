@@ -128,7 +128,7 @@ def submit_indexnow(domain: str, urls: list, key: str):
     batch_size = 200
     key_location = f"https://{domain}/{key}.txt"
     print(f"🚀 IndexNow → host={domain}")
-    print(f"   keyLocation={key_location}")
+    print(f"   keyLocation=https://{domain}/<redacted>.txt")  # do not log key
     print(f"   urls={len(urls)}")
 
     ok_batches = 0
