@@ -396,7 +396,15 @@ def fit_meta_description(text, title="", keyword="", min_len=150, max_len=160):
         if " " in cut:
             cut = cut.rsplit(" ", 1)[0]
         text = cut.rstrip(".,;:") + "…"
-    # If still short after one pad + truncate path, leave as-is (better short than spam)
+    while len(text) < min_len:
+        text = (text.rstrip(". ") + ". Updated for American readers.").strip()
+        text = " ".join(text.split())
+        if len(text) > max_len:
+            cut = text[: max_len - 1]
+            if " " in cut:
+                cut = cut.rsplit(" ", 1)[0]
+            text = cut.rstrip(".,;:") + "…"
+            break
     return text
 
 
