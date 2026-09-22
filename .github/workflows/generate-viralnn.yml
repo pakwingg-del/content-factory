@@ -2,34 +2,40 @@
 name: Generate ViralNN
 on:
   workflow_dispatch:
-    repository_dispatch:
-        types: [external_trigger]
+  repository_dispatch:
+    types: [external_trigger]
 
-        jobs:
-          generate:
-              runs-on: ubuntu-latest
-                  steps:
-                        - uses: actions/checkout@v4
-                              - uses: actions/setup-python@v5
-                                      with:
-                                                python-version: '3.11'
-                                                      - run: pip install requests openai google-auth google-api-python-client
+permissions:
+  contents: read
 
-                                                            - name: Generate + Inject
-                                                                    env:
-                                                                              DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-                                                                                        LLM_MODEL: ${{ secrets.LLM_MODEL }}
-                                                                                                  PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-                                                                                                            CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-                                                                                                                      CLOUDFLARE_DATABASE_ID: ${{ secrets.CLOUDFLARE_DATABASE_ID }}
-                                                                                                                                CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-                                                                                                                                        run: python generator.py --site viralnn
-                                                                                                                                        
-                                                                                                                                              - name: Submit IndexNow
-                                                                                                                                                      env:
-                                                                                                                                                                CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-                                                                                                                                                                          CLOUDFLARE_DATABASE_ID: ${{ secrets.CLOUDFLARE_DATABASE_ID }}
-                                                                                                                                                                                    CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-                                                                                                                                                                                              INDEXNOW_KEY_VIRALNN: ${{ secrets.INDEXNOW_KEY_VIRALNN }}
-                                                                                                                                                                                                      run: python submit_indexing.py --site viralnn --from-last-run
-                                                                                                                                                                                                      
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install requests openai google-auth google-api-python-client
+
+      - name: Generate + Inject
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_DATABASE_ID: ${{ secrets.CLOUDFLARE_DATABASE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python generator.py --site viralnn
+
+      - name: Submit IndexNow
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_DATABASE_ID: ${{ secrets.CLOUDFLARE_DATABASE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          INDEXNOW_KEY_VIRALNN: ${{ secrets.INDEXNOW_KEY_VIRALNN }}
+        run: python submit_indexing.py --site viralnn --from-last-run
